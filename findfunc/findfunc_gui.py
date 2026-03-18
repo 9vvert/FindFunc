@@ -6,6 +6,7 @@ import cProfile
 import io
 import copy
 import traceback
+import csv
 
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QWidget, QMessageBox, QLineEdit, QApplication, QTabBar, QMenu, QFileDialog
@@ -443,12 +444,46 @@ class TabWid(QWidget):
         self.ui.btnsavesess.clicked.connect(self.savesessionclicked)
         self.ui.btnsavesess.setToolTip("save all tabs to file")
         self.ui.btnsavesess.setShortcut("ctrl+shift+s")
+        self.ui.btnexportcsv.clicked.connect(self.exportcsvclicked)
+        self.ui.btnexportcsv.setToolTip("export results of current tab to csv")
         self.clearAll()
         self.addNewTab()
         for r in [RuleImmediate(9), RuleCode("xor eax,r32"), RuleNameRef("mem*")]:
             self.ui.tabWidget.widget(0).model.add_item(r)
         self.lastsessionsaved = self.session_to_text()  # last saved session data, used for checking on close
         print("init with config:" + str(self.ui.tabWidget.widget(0).matcher.info))
+
+    def exportcsvclicked(self):
+        """Export current tab's result table to CSV (comma-separated)."""
+        tab = self.ui.tabWidget.currentWidget()
+        if not tab or not hasattr(tab, "resultmodel"):
+            QMessageBox.warning(self, "Nothing", "No active results tab selected")
+            return
+        results = getattr(tab.resultmodel, "mydata", None)
+        if not results:
+            QMessageBox.warning(self, "Nothing", "No results to export")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self, 'Export Results to CSV', "findfunc_results.csv",
+                                              "CSV (*.csv) ;; Any (*.*)")
+        if not path:
+            return
+
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as handle:
+                writer = csv.writer(handle, delimiter=',')
+                writer.writerow(["VA", "Size", "Chunks", "Name", "LastMatch"])
+                for r in results:
+                    writer.writerow([
+                        hex(r.va) if r.va is not None else "",
+                        r.size if r.size is not None else "",
+                        r.chunks if r.chunks is not None else "",
+                        r.name if r.name is not None else "",
+                        hex(r.lastmatch) if getattr(r, "lastmatch", None) is not None else "",
+                    ])
+            QMessageBox.information(self, "Success", "Exported successfully to " + path)
+        except Exception as ex:
+            QMessageBox.warning(self, "Error exporting file", str(ex))
 
     def closeEvent(self, event):
         # when running as script, we need to handle it here
